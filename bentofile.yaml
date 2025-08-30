@@ -1,0 +1,13 @@
+service: "service.py:svc"
+labels:
+    owner: dongmofrancis27
+    project: seattle-data-api
+include:
+    - "*.py"
+    - "DONNEES SEATTLE.csv"
+python:
+    packages:
+        - pandas
+        - fastapi
+        - uvicorn
+        - bentoml
