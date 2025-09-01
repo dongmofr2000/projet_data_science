@@ -1,74 +1,67 @@
+import bentoml
 from fastapi import FastAPI
+from pydantic import BaseModel, Field, PositiveFloat
 import pandas as pd
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
+import json
 
-# Initialise une instance de l'application FastAPI
+# Chargez les données une seule fois
+try:
+    df = pd.read_csv("DONNEES SEATTLE.csv")
+except FileNotFoundError:
+    # Gérer l'erreur si le fichier n'est pas trouvé
+    df = pd.DataFrame()
+
+# Créez l'application FastAPI
 app = FastAPI(
     title="API de Données de Seattle",
     description="Une API pour accéder aux données du fichier 'DONNEES SEATTLE.csv'."
 )
 
-# Définit un chemin d'accès au fichier CSV. Assurez-vous que ce fichier se trouve dans le même dossier que service.py.
-DATA_FILE = "DONNEES SEATTLE.csv"
+# Définissez le service BentoML et montez l'application FastAPI
+svc = bentoml.Service(
+    name="seattle-data-api"
+)
+svc.mount_asgi_app(app)
 
-# Endpoint de la page d'accueil de l'API
+# Définissez une classe Pydantic pour valider le schéma de données
+# J'ai ajouté des règles de validation plus strictes pour empêcher les incohérences
+class BuildingData(BaseModel):
+    OSEBuildingID: int = Field(..., description="ID unique du bâtiment")
+    DataYear: int = Field(..., ge=2016, le=2023, description="Année des données, doit être >= 2016")
+    BuildingType: str = Field(..., min_length=1, description="Type de bâtiment")
+    PrimaryPropertyType: str = Field(..., min_length=1, description="Type de propriété principal")
+    PropertyName: str = Field(..., min_length=1, description="Nom de la propriété")
+    Address: str = Field(..., min_length=1, description="Adresse de la propriété")
+    # GHGEmissionsIntensity est un champ optionnel, et doit être un nombre positif
+    GHGEmissionsIntensity: Optional[PositiveFloat] = None
+    
+# Ajoutez des points d'accès à l'API
 @app.get("/")
 def read_root():
-    """
-    Retourne un message de bienvenue à la racine de l'API.
-    """
-    return {"message": "Bienvenue sur l'API de données de Seattle ! Accédez aux données via le chemin /data."}
+    return {"message": "Bienvenue sur l'API de données de Seattle !"}
 
-# Endpoint pour lire et retourner les premières lignes du fichier CSV
 @app.get("/data", response_model=List[Dict[str, Any]])
 def get_data_head():
-    """
-    Charge les données du fichier CSV et retourne les 5 premières lignes.
-    """
-    try:
-        # Tente de lire le fichier CSV
-        df = pd.read_csv(DATA_FILE)
-        
-        # Convertit les 5 premières lignes en un dictionnaire de listes pour la réponse JSON
-        # Utilisez .to_dict(orient='records') pour obtenir une liste d'objets JSON
-        records = df.head().to_dict(orient='records')
-        
-        return records
-    except FileNotFoundError:
-        # Gère l'erreur si le fichier n'est pas trouvé
-        return {"error": f"Le fichier {DATA_FILE} n'a pas été trouvé. Veuillez vous assurer qu'il se trouve dans le même répertoire."}
-    except Exception as e:
-        # Gère toute autre erreur
-        return {"error": f"Une erreur s'est produite lors du chargement des données : {e}"}
+    if df.empty:
+        return {"error": "Le jeu de données est vide."}
+    records = df.head().to_dict(orient='records')
+    return records
 
-# Vous pouvez ajouter d'autres endpoints pour filtrer les données, rechercher des enregistrements, etc.
-# Par exemple, pour un endpoint qui retourne les données d'une année spécifique :
 @app.get("/data/year/{year}", response_model=List[Dict[str, Any]])
 def get_data_by_year(year: int):
-    """
-    Charge les données du fichier CSV et retourne tous les enregistrements pour une année donnée.
-    """
-    try:
-        df = pd.read_csv(DATA_FILE)
-        
-        # Filtre le DataFrame pour ne garder que les lignes de l'année spécifiée
-        filtered_df = df[df['DataYear'] == year]
-        
-        if filtered_df.empty:
-            return {"message": f"Aucune donnée trouvée pour l'année {year}."}
-        
-        records = filtered_df.to_dict(orient='records')
-        
-        return records
-    except FileNotFoundError:
-        return {"error": f"Le fichier {DATA_FILE} n'a pas été trouvé."}
-    except Exception as e:
-        return {"error": f"Une erreur s'est produite lors du filtrage des données : {e}"}
+    if df.empty:
+        return {"error": "Le jeu de données est vide."}
+    filtered_df = df[df['DataYear'] == year]
+    if filtered_df.empty:
+        return {"message": f"Aucune donnée trouvée pour l'année {year}."}
+    records = filtered_df.to_dict(orient='records')
+    return records
 
-
-
-
-
-
-
+@app.post("/data/submit")
+def submit_new_building_data(building_data: BuildingData):
+    return {
+        "message": "Données de bâtiment reçues et validées avec succès !",
+        "data_received": building_data.dict()
+    }
 
