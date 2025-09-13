@@ -69,80 +69,73 @@ def submit_new_building_data(building_data: BuildingData):
     
     import pandas as pd
 import numpy as np
-from sklearn.pipeline import Pipeline
-from sklearn.ensemble import GradientBoostingRegressor
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
-from sklearn.impute import SimpleImputer
-from sklearn.compose import ColumnTransformer
+from bentoml.io import JSON
+from bentoml import service
+from pydantic import BaseModel, ValidationError
 
-class EnergyConsumptionPredictor:
-    """
-    Une classe pour encapsuler le pipeline de modélisation
-    et faire des prédictions sur la consommation d'énergie.
-    """
-    def __init__(self, modele_entraine):
-        self.modele = modele_entraine
+# On importe les modules de Scikit-learn
+# Note: dans une vraie application, vous chargeriez ces objets depuis des fichiers
+# comme dans votre code.
 
-    def predict(self, nouvelles_donnees):
-        """
-        Fait une prédiction sur de nouvelles données.
-
-        Args:
-            nouvelles_donnees (pd.DataFrame): DataFrame contenant les
-                                             features pour la prédiction.
-
-        Returns:
-            float: La prédiction de la consommation d'énergie en kBtu.
-        """
-        # S'assurer que les nouvelles données sont un DataFrame
-        if not isinstance(nouvelles_donnees, pd.DataFrame):
-            nouvelles_donnees = pd.DataFrame(nouvelles_donnees)
-
-        # Faire la prédiction avec le pipeline
-        # La prédiction est sur l'échelle logarithmique
-        prediction_log = self.modele.predict(nouvelles_donnees)
-
-        # Reconvertir la prédiction à l'échelle originale (kBtu)
-        prediction_originale = np.expm1(prediction_log)
-
-        return prediction_originale[0]
-
-# Assurez-vous d'avoir entraîné votre modèle et qu'il est stocké dans
-# la variable `modele_pipeline` ou `modele_random_forest` si vous avez
-# utilisé ce modèle
-# Par exemple, si vous avez utilisé le Gradient Boosting
-# modele_entraine = modele_pipeline
-
-# Vous pouvez également utiliser le meilleur modèle issu de votre GridSearchCV
-# modele_entraine = grid_search_large.best_estimator_
-
-# Exemple d'utilisation de la classe
-# Remplacez les valeurs ci-dessous par de nouvelles données de bâtiment
-nouvelles_donnees = {
-    'PropertyGFABuilding(s)': [150000],
-    'NumberOfBuildings': [1],
-    'NumberofFloors': [5],
-    'PropertyGFAParking': [5000],
-    'AgeDuBatiment': [20],
-    'NombreDeTypesUsage': [2],
-    'PresenceElectricite': [1],
-    'PresenceGazNaturel': [1],
-    'PresenceVapeur': [0],
-    'PrimaryPropertyType': ['Office'],
-    'PropertyUseType': ['Office']
-}
-
-# Créer une instance de la classe avec votre modèle entraîné
-# NOTE : remplacez `modele_random_forest` par le nom de la variable
-# contenant votre meilleur modèle
-predictor = EnergyConsumptionPredictor(modele_random_forest)
-
-# Obtenir la prédiction
-prediction = predictor.predict(nouvelles_donnees)
-
-print(f"La prédiction de la consommation d'énergie est de {prediction:,.2f} kBtu.")
+# Voici une classe simple pour les données d'entrée, inspirée par votre code
+class BuildingData(BaseModel):
+    # Liste simplifiée des features nécessaires pour la prédiction
+    PropertyGFABuilding_s: float
+    NumberofFloors: int
+    AgeDuBatiment: int
+    PropertyGFAParking: float
+    PrimaryPropertyType: str
+    
+    # Configuration pour autoriser les types de données complexes
+    class Config:
+        arbitrary_types_allowed = True
 
 
+# La classe de service qui fait la prédiction
+@service
+class SimpleBuildingPredictor:
+    
+    # C'est ici que l'on charge tous les objets nécessaires (modèles, pipelines, etc.)
+    # Cette méthode est exécutée une seule fois au démarrage du service
+    def __init__(self):
+        # NOTE : Les lignes ci-dessous sont commentées car nous n'avons pas
+        # les fichiers de votre modèle. Dans votre code, elles sont cruciales.
+        # self.pipeline = pd.read_pickle("votre_pipeline.pkl")
+        # self.model = pd.read_pickle("votre_modele.pkl")
+        pass
+
+    # Décorateur d'API pour créer un endpoint
+    # On précise le type de données d'entrée (JSON) et son schéma (BuildingData)
+    @bentoml.api(input=JSON(pydantic_model=BuildingData))
+    def predict(self, input_data: BuildingData) -> dict:
+        
+        try:
+            # Conversion des données de Pydantic en un DataFrame Pandas
+            data_dict = input_data.model_dump()
+            data_df = pd.DataFrame([data_dict])
+
+            # Exemple d'application du pipeline et de la prédiction
+            # Remplacez ceci par votre vraie logique de prédiction
+            # transformed_data = self.pipeline.transform(data_df)
+            # prediction = self.model.predict(transformed_data)
+            
+            # Exemple de résultat de prédiction simple pour la démonstration
+            # On simule un résultat de prédiction ici
+            prediction = [4242.42]
+
+            # Reconvertir la prédiction à l'échelle d'origine si nécessaire
+            # prediction_finale = np.expm1(prediction)
+            
+            return {
+                "prediction": round(float(prediction[0]), 2),
+                "status": "success",
+            }
+        
+        except Exception as e:
+            return {
+                "error": str(e),
+                "status": "failed"
+            }
 les décorateurs nécessaires pour identifier le service et ses endpoints
 
 from flask import Flask, request
