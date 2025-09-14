@@ -173,3 +173,80 @@ def donnees():
 if __name__ == '__main__':
     app.run(debug=True)
 
+
+
+Créer le script service.py pour la prédiction
+
+
+import bentoml
+import pandas as pd
+from bentoml.io import JSON
+from pydantic import BaseModel, Field
+from typing import Optional
+
+# --- Définition des schémas de données pour l'API ---
+class Building(BaseModel):
+    OSEBuildingID: Optional[int] = None
+    DataYear: Optional[int] = None
+    BuildingType: Optional[str] = None
+    PrimaryPropertyType: Optional[str] = None
+    PropertyName: Optional[str] = None
+    Address: Optional[str] = None
+    City: Optional[str] = None
+    State: Optional[str] = None
+    ZipCode: Optional[int] = None
+    TaxParcelIdentificationNumber: Optional[str] = None
+    CouncilDistrictCode: Optional[int] = None
+    Neighborhood: Optional[str] = None
+    Latitude: Optional[float] = None
+    Longitude: Optional[float] = None
+    YearBuilt: Optional[int] = None
+    NumberofBuildings: Optional[int] = None
+    NumberofFloors: Optional[int] = None
+    PropertyGFATotal: Optional[int] = None
+    PropertyGFAParking: Optional[int] = None
+    PropertyGFABuilding_s: Optional[int] = Field(None, alias='PropertyGFABuilding(s)')
+    ListOfAllPropertyUseTypes: Optional[str] = None
+    LargestPropertyUseType: Optional[str] = None
+    LargestPropertyUseTypeGFA: Optional[float] = None
+    SecondLargestPropertyUseType: Optional[str] = None
+    SecondLargestPropertyUseTypeGFA: Optional[float] = None
+    ThirdLargestPropertyUseType: Optional[str] = None
+    ThirdLargestPropertyUseTypeGFA: Optional[float] = None
+    YearsENERGYSTARCertified: Optional[str] = None
+    ENERGYSTARScore: Optional[int] = None
+    SiteEUI_kBtu_sf: Optional[float] = Field(None, alias='SiteEUI(kBtu/sf)')
+    SourceEUI_kBtu_sf: Optional[float] = Field(None, alias='SourceEUI(kBtu/sf)')
+    SteamUse_kBtu: Optional[float] = Field(None, alias='SteamUse(kBtu)')
+    Electricity_kWh: Optional[float] = Field(None, alias='Electricity(kWh)')
+    NaturalGas_therms: Optional[float] = Field(None, alias='NaturalGas(therms)')
+    
+class PredictionResult(BaseModel):
+    consommation_energie_kBtu: float
+    emission_ges: float
+
+# --- Définition du service BentoML ---
+@bentoml.service(name="building_energy_predictor")
+class BuildingPredictorService:
+    def __init__(self):
+        self.energy_pipeline = bentoml.sklearn.load_model("energy_pipeline")
+        self.ges_pipeline = bentoml.sklearn.load_model("ges_pipeline")
+        self.features = [
+            'OSEBuildingID', 'DataYear', 'BuildingType', 'PrimaryPropertyType', 'PropertyName', 'Address', 'City', 'State', 'ZipCode', 'TaxParcelIdentificationNumber', 'CouncilDistrictCode', 'Neighborhood', 'Latitude', 'Longitude', 'YearBuilt', 'NumberofBuildings', 'NumberofFloors', 'PropertyGFATotal', 'PropertyGFAParking', 'PropertyGFABuilding(s)', 'ListOfAllPropertyUseTypes', 'LargestPropertyUseType', 'LargestPropertyUseTypeGFA', 'SecondLargestPropertyUseType', 'SecondLargestPropertyUseTypeGFA', 'ThirdLargestPropertyUseType', 'ThirdLargestPropertyUseTypeGFA', 'YearsENERGYSTARCertified', 'ENERGYSTARScore', 'SiteEUI(kBtu/sf)', 'SourceEUI(kBtu/sf)', 'SteamUse(kBtu)', 'Electricity(kWh)', 'NaturalGas(therms)'
+        ]
+
+    @bentoml.api(input=JSON(pydantic_model=Building), output=JSON(pydantic_model=PredictionResult))
+    def predict(self, input_data: Building) -> PredictionResult:
+        input_df = pd.DataFrame([input_data.model_dump(by_alias=True)])
+
+        # Assurez-vous que le DataFrame d'entrée a toutes les colonnes attendues
+        input_df = input_df.reindex(columns=self.features, fill_value=None)
+
+        energy_use = self.energy_pipeline.predict(input_df)[0]
+        total_ges = self.ges_pipeline.predict(input_df)[0]
+
+        return PredictionResult(
+            consommation_energie_kBtu=round(float(energy_use), 2),
+            emission_ges=round(float(total_ges), 2)
+        )
+
