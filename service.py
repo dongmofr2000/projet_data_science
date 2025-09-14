@@ -132,50 +132,6 @@ class Building(BaseModel):
 class BuildingList(BaseModel):
     buildings: List[Building]
 
-# Modèle pour l'OUTPUT de l'API
-class PredictionResult(BaseModel):
-    consommation_energie_kBtu: float
-    emission_ges: float
-    statut_code: int = 200
-    message: str = "Prédiction réussie"
-
-
-
-
-
-les décorateurs nécessaires pour identifier le service et ses endpoints
-
-from flask import Flask, request
-
-# 1. Le décorateur de l'application
-# Il instancie l'application et la prépare à gérer les requêtes.
-app = Flask(__name__)
-
-# 2. Le décorateur de l'endpoint
-# Il lie le chemin d'accès ('/') à la fonction 'home()'.
-@app.route('/')
-def home():
-    return "Bienvenue sur l'accueil !"
-
-# Un autre endpoint pour un chemin différent
-@app.route('/salut')
-def salut():
-    return "Salut, c'est un autre endpoint !"
-
-# Un endpoint avec des méthodes HTTP spécifiques
-@app.route('/donnees', methods=['GET', 'POST'])
-def donnees():
-    if request.method == 'POST':
-        return "Données reçues via une requête POST."
-    else:
-        return "Ceci est le point d'accès pour les requêtes GET."
-
-if __name__ == '__main__':
-    app.run(debug=True)
-
-
-
-Créer le script service.py pour la prédiction
 
 
 import bentoml
@@ -220,7 +176,7 @@ class Building(BaseModel):
     SteamUse_kBtu: Optional[float] = Field(None, alias='SteamUse(kBtu)')
     Electricity_kWh: Optional[float] = Field(None, alias='Electricity(kWh)')
     NaturalGas_therms: Optional[float] = Field(None, alias='NaturalGas(therms)')
-    
+
 class PredictionResult(BaseModel):
     consommation_energie_kBtu: float
     emission_ges: float
@@ -235,18 +191,52 @@ class BuildingPredictorService:
             'OSEBuildingID', 'DataYear', 'BuildingType', 'PrimaryPropertyType', 'PropertyName', 'Address', 'City', 'State', 'ZipCode', 'TaxParcelIdentificationNumber', 'CouncilDistrictCode', 'Neighborhood', 'Latitude', 'Longitude', 'YearBuilt', 'NumberofBuildings', 'NumberofFloors', 'PropertyGFATotal', 'PropertyGFAParking', 'PropertyGFABuilding(s)', 'ListOfAllPropertyUseTypes', 'LargestPropertyUseType', 'LargestPropertyUseTypeGFA', 'SecondLargestPropertyUseType', 'SecondLargestPropertyUseTypeGFA', 'ThirdLargestPropertyUseType', 'ThirdLargestPropertyUseTypeGFA', 'YearsENERGYSTARCertified', 'ENERGYSTARScore', 'SiteEUI(kBtu/sf)', 'SourceEUI(kBtu/sf)', 'SteamUse(kBtu)', 'Electricity(kWh)', 'NaturalGas(therms)'
         ]
 
+    # Utilisation de la syntaxe standard pour les versions de BentoML 1.4+
     @bentoml.api(input=JSON(pydantic_model=Building), output=JSON(pydantic_model=PredictionResult))
-    def predict(self, input_data: Building) -> PredictionResult:
-        input_df = pd.DataFrame([input_data.model_dump(by_alias=True)])
-
-        # Assurez-vous que le DataFrame d'entrée a toutes les colonnes attendues
+    def predict(self, input_data: dict) -> dict:
+        input_df = pd.DataFrame([input_data])
         input_df = input_df.reindex(columns=self.features, fill_value=None)
-
+        
         energy_use = self.energy_pipeline.predict(input_df)[0]
         total_ges = self.ges_pipeline.predict(input_df)[0]
+        
+        return {
+            "consommation_energie_kBtu": round(float(energy_use), 2),
+            "emission_ges": round(float(total_ges), 2)
+        }
 
-        return PredictionResult(
-            consommation_energie_kBtu=round(float(energy_use), 2),
-            emission_ges=round(float(total_ges), 2)
-        )
+
+
+
+les décorateurs nécessaires pour identifier le service et ses endpoints
+
+from flask import Flask, request
+
+# 1. Le décorateur de l'application
+# Il instancie l'application et la prépare à gérer les requêtes.
+app = Flask(__name__)
+
+# 2. Le décorateur de l'endpoint
+# Il lie le chemin d'accès ('/') à la fonction 'home()'.
+@app.route('/')
+def home():
+    return "Bienvenue sur l'accueil !"
+
+# Un autre endpoint pour un chemin différent
+@app.route('/salut')
+def salut():
+    return "Salut, c'est un autre endpoint !"
+
+# Un endpoint avec des méthodes HTTP spécifiques
+@app.route('/donnees', methods=['GET', 'POST'])
+def donnees():
+    if request.method == 'POST':
+        return "Données reçues via une requête POST."
+    else:
+        return "Ceci est le point d'accès pour les requêtes GET."
+
+if __name__ == '__main__':
+    app.run(debug=True)
+
+
 
