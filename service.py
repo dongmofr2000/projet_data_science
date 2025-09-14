@@ -67,75 +67,82 @@ def submit_new_building_data(building_data: BuildingData):
     
     Création de la classe de prédiction
     
-    import pandas as pd
-import numpy as np
-from bentoml.io import JSON
-from bentoml import service
-from pydantic import BaseModel, ValidationError
+     
+from pydantic import BaseModel, field_validator
+from pydantic_core import PydanticCustomError
+from typing import Optional, List
 
-# On importe les modules de Scikit-learn
-# Note: dans une vraie application, vous chargeriez ces objets depuis des fichiers
-# comme dans votre code.
-
-# Voici une classe simple pour les données d'entrée, inspirée par votre code
-class BuildingData(BaseModel):
-    # Liste simplifiée des features nécessaires pour la prédiction
-    PropertyGFABuilding_s: float
-    NumberofFloors: int
-    AgeDuBatiment: int
-    PropertyGFAParking: float
+class Building(BaseModel):
+    DataYear: int = 2017
+    BuildingType: str
     PrimaryPropertyType: str
-    
-    # Configuration pour autoriser les types de données complexes
-    class Config:
-        arbitrary_types_allowed = True
+    SecondLargestPropertyUseType: Optional[str]
+    ThirdLargestPropertyUseType: Optional[str]
+    ZipCode: str
+    CouncilDistrictCode: int
+    Neighborhood: str
+    YearBuilt: int
+    NumberofBuildings: int
+    NumberofFloors: int
+    PropertyGFATotal: float
+    PropertyGFAParking: float
+    ListOfAllPropertyUseTypes: str
+    LargestPropertyUseType: str
+
+    @field_validator('CouncilDistrictCode')
+    @classmethod
+    def validate_council_district(cls, CouncilDistrictCode: int) -> int:
+        if not (0 < CouncilDistrictCode < 8):
+            raise PydanticCustomError(
+                'validation_error',
+                'Le district doit être entre 1 et 7.',
+            )
+        return CouncilDistrictCode
+
+    @field_validator('YearBuilt')
+    @classmethod
+    def validate_year(cls, YearBuilt: int) -> int:
+        if YearBuilt < 1850 or YearBuilt > 2025:
+            raise PydanticCustomError(
+                'validation_error',
+                'L\'année de construction est invalide.',
+            )
+        return YearBuilt
+
+    @field_validator('NumberofFloors')
+    @classmethod
+    def validate_floors(cls, NumberofFloors: int) -> int:
+        if NumberofFloors <= 0:
+            raise PydanticCustomError(
+                'validation_error',
+                'Le nombre d\'étages doit être supérieur à 0.',
+            )
+        return NumberofFloors
+
+    @field_validator('NumberofBuildings')
+    @classmethod
+    def validate_buildings(cls, NumberofBuildings: int) -> int:
+        if NumberofBuildings <= 0:
+            raise PydanticCustomError(
+                'validation_error',
+                'Le nombre de bâtiments doit être supérieur à 0.',
+            )
+        return NumberofBuildings
+
+class BuildingList(BaseModel):
+    buildings: List[Building]
+
+# Modèle pour l'OUTPUT de l'API
+class PredictionResult(BaseModel):
+    consommation_energie_kBtu: float
+    emission_ges: float
+    statut_code: int = 200
+    message: str = "Prédiction réussie"
 
 
-# La classe de service qui fait la prédiction
-@service
-class SimpleBuildingPredictor:
-    
-    # C'est ici que l'on charge tous les objets nécessaires (modèles, pipelines, etc.)
-    # Cette méthode est exécutée une seule fois au démarrage du service
-    def __init__(self):
-        # NOTE : Les lignes ci-dessous sont commentées car nous n'avons pas
-        # les fichiers de votre modèle. Dans votre code, elles sont cruciales.
-        # self.pipeline = pd.read_pickle("votre_pipeline.pkl")
-        # self.model = pd.read_pickle("votre_modele.pkl")
-        pass
 
-    # Décorateur d'API pour créer un endpoint
-    # On précise le type de données d'entrée (JSON) et son schéma (BuildingData)
-    @bentoml.api(input=JSON(pydantic_model=BuildingData))
-    def predict(self, input_data: BuildingData) -> dict:
-        
-        try:
-            # Conversion des données de Pydantic en un DataFrame Pandas
-            data_dict = input_data.model_dump()
-            data_df = pd.DataFrame([data_dict])
 
-            # Exemple d'application du pipeline et de la prédiction
-            # Remplacez ceci par votre vraie logique de prédiction
-            # transformed_data = self.pipeline.transform(data_df)
-            # prediction = self.model.predict(transformed_data)
-            
-            # Exemple de résultat de prédiction simple pour la démonstration
-            # On simule un résultat de prédiction ici
-            prediction = [4242.42]
 
-            # Reconvertir la prédiction à l'échelle d'origine si nécessaire
-            # prediction_finale = np.expm1(prediction)
-            
-            return {
-                "prediction": round(float(prediction[0]), 2),
-                "status": "success",
-            }
-        
-        except Exception as e:
-            return {
-                "error": str(e),
-                "status": "failed"
-            }
 les décorateurs nécessaires pour identifier le service et ses endpoints
 
 from flask import Flask, request
