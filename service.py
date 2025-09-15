@@ -159,7 +159,7 @@ class PredictionResult(BaseModel):
 class Prediction:
     def __init__(self) -> None:
         """Charge le modèle enregistré."""
-        self.pipeline = bentoml.sklearn.load_model("rf_pipeline_model:latest")
+        self.pipeline = bentoml.sklearn.load_model("energy_pipeline:latest")
 
     @bentoml.api(input=JSON(pydantic_model=InputData), output=JSON(pydantic_model=PredictionResult))
     def predict(self, input_data: dict) -> dict:
