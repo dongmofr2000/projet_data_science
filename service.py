@@ -67,7 +67,12 @@ def submit_new_building_data(building_data: BuildingData):
     
     Création de la classe de prédiction
     
-     
+
+
+import bentoml
+import pandas as pd
+from bentoml.io import JSON
+from pydantic import BaseModel, Field, ValidationError
 from pydantic import BaseModel, field_validator
 from pydantic_core import PydanticCustomError
 from typing import Optional, List
@@ -132,6 +137,66 @@ class Building(BaseModel):
 class BuildingList(BaseModel):
     buildings: List[Building]
 
+
+
+# --- Définition de la classe pour les données d'entrée (InputData) ---
+class InputData(BaseModel):
+    NumberofFloors: int
+    LargestPropertyuseTypeGFA: float
+    SecondLargestPropertyuseTypeGFA: Optional[float]
+    ENERGYSTARScore: Optional[int]
+    SteamUse_kBtu: Optional[float] = Field(None, alias="Steamused")
+    NaturalGas_therms: Optional[float] = Field(None, alias="NaturalGasused")
+    PrimaryPropertyType: str
+    Neighborhood: str
+
+# --- Définition de la classe pour le résultat de la prédiction ---
+class PredictionResult(BaseModel):
+    prediction_kBtu: float = Field(..., alias="prediction (kBtu)")
+
+# --- Définition du service BentoML ---
+@bentoml.service(name="building_energy_predictor")
+class Prediction:
+    def __init__(self) -> None:
+        """Charge le modèle enregistré."""
+        self.pipeline = bentoml.sklearn.load_model("rf_pipeline_model:latest")
+
+    @bentoml.api(input=JSON(pydantic_model=InputData), output=JSON(pydantic_model=PredictionResult))
+    def predict(self, input_data: dict) -> dict:
+        try:
+            # Valider les données d'entrée avec la classe Pydantic
+            data = InputData(**input_data)
+        except ValidationError as e:
+            # Gérer les erreurs de validation
+            errors = [
+                {"field": ".".join(str(loc) for loc in err["loc"]), "error": err["msg"]}
+                for err in e.errors()
+            ]
+            return {"error": "Invalid input", "details": errors}
+
+        # Appliquer les mappages (conversion en minuscules)
+        data.PrimaryPropertyType = data.PrimaryPropertyType.lower()
+        data.Neighborhood = data.Neighborhood.lower()
+
+        features = [
+            data.NumberofFloors,
+            data.LargestPropertyuseTypeGFA,
+            data.SecondLargestPropertyuseTypeGFA,
+            data.ENERGYSTARScore,
+            data.SteamUse_kBtu,
+            data.NaturalGas_therms,
+        ]
+
+        df = pd.DataFrame([features])
+        
+        df.columns = ["NumberofFloors", "LargestPropertyuseTypeGFA", "SecondLargestPropertyuseTypeGFA",
+                      "ENERGYSTARScore", "SteamUse_kBtu", "NaturalGas_therms"]
+        
+        # Effectuer la prédiction
+        prediction = self.pipeline.predict(df)[0]
+
+        # Retourner la prédiction dans le format JSON
+        return {"prediction (kBtu)": round(float(prediction), 2)}
 
 
 
