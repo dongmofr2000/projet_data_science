@@ -139,6 +139,7 @@ class BuildingList(BaseModel):
 
 
 
+
 # --- Définition de la classe pour les données d'entrée (InputData) ---
 class InputData(BaseModel):
     NumberofFloors: int
@@ -155,7 +156,7 @@ class PredictionResult(BaseModel):
     prediction_kBtu: float = Field(..., alias="prediction (kBtu)")
 
 # --- Définition du service BentoML ---
-@bentoml.service(name="building_energy_predictor")
+@bentoml.service(name="building_energy_predictor", http={"port": 8080})
 class Prediction:
     def __init__(self) -> None:
         """Charge le modèle enregistré."""
@@ -174,7 +175,6 @@ class Prediction:
             ]
             return {"error": "Invalid input", "details": errors}
 
-        # Appliquer les mappages (conversion en minuscules)
         data.PrimaryPropertyType = data.PrimaryPropertyType.lower()
         data.Neighborhood = data.Neighborhood.lower()
 
@@ -197,8 +197,6 @@ class Prediction:
 
         # Retourner la prédiction dans le format JSON
         return {"prediction (kBtu)": round(float(prediction), 2)}
-
-
 
 
 les décorateurs nécessaires pour identifier le service et ses endpoints
