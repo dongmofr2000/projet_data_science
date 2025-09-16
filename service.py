@@ -76,6 +76,10 @@ from pydantic import BaseModel, Field, ValidationError
 from pydantic import BaseModel, field_validator
 from pydantic_core import PydanticCustomError
 from typing import Optional, List
+import bentoml
+import pandas as pd
+from pydantic import BaseModel, Field
+from typing import Optional
 
 class Building(BaseModel):
     DataYear: int = 2017
@@ -138,9 +142,7 @@ class BuildingList(BaseModel):
     buildings: List[Building]
 
 
-
-
-# --- Définition de la classe pour les données d'entrée (InputData) ---
+# --- Définition des schémas de données pour l'API ---
 class InputData(BaseModel):
     NumberofFloors: int
     LargestPropertyuseTypeGFA: float
@@ -151,51 +153,43 @@ class InputData(BaseModel):
     PrimaryPropertyType: str
     Neighborhood: str
 
-# --- Définition de la classe pour le résultat de la prédiction ---
-class PredictionResult(BaseModel):
-    prediction_kBtu: float = Field(..., alias="prediction (kBtu)")
-
 # --- Définition du service BentoML ---
-@bentoml.service(name="building_energy_predictor", http={"port": 8080})
+@bentoml.service(name="building_energy_predictor")
 class Prediction:
     def __init__(self) -> None:
         """Charge le modèle enregistré."""
         self.pipeline = bentoml.sklearn.load_model("energy_pipeline:latest")
-
-    @bentoml.api(input=JSON(pydantic_model=InputData), output=JSON(pydantic_model=PredictionResult))
-    def predict(self, input_data: dict) -> dict:
-        try:
-            # Valider les données d'entrée avec la classe Pydantic
-            data = InputData(**input_data)
-        except ValidationError as e:
-            # Gérer les erreurs de validation
-            errors = [
-                {"field": ".".join(str(loc) for loc in err["loc"]), "error": err["msg"]}
-                for err in e.errors()
-            ]
-            return {"error": "Invalid input", "details": errors}
-
-        data.PrimaryPropertyType = data.PrimaryPropertyType.lower()
-        data.Neighborhood = data.Neighborhood.lower()
-
-        features = [
-            data.NumberofFloors,
-            data.LargestPropertyuseTypeGFA,
-            data.SecondLargestPropertyuseTypeGFA,
-            data.ENERGYSTARScore,
-            data.SteamUse_kBtu,
-            data.NaturalGas_therms,
+        
+        # Définition de toutes les colonnes attendues par le modèle
+        self.expected_columns = [
+            'OSEBuildingID', 'DataYear', 'BuildingType', 'PrimaryPropertyType', 'PropertyName', 'Address', 'City', 
+            'State', 'ZipCode', 'TaxParcelIdentificationNumber', 'CouncilDistrictCode', 'Neighborhood', 'Latitude', 
+            'Longitude', 'YearBuilt', 'NumberofBuildings', 'NumberofFloors', 'PropertyGFATotal', 'PropertyGFAParking', 
+            'PropertyGFABuilding(s)', 'ListOfAllPropertyUseTypes', 'LargestPropertyUseType', 'LargestPropertyUseTypeGFA', 
+            'SecondLargestPropertyUseType', 'SecondLargestPropertyUseTypeGFA', 'ThirdLargestPropertyUseType', 
+            'ThirdLargestPropertyUseTypeGFA', 'YearsENERGYSTARCertified', 'ENERGYSTARScore', 'SiteEUI(kBtu/sf)', 
+            'SiteEUIWN(kBtu/sf)', 'SourceEUI(kBtu/sf)', 'SourceEUIWN(kBtu/sf)', 'SiteEnergyUse(kBtu)', 'SiteEnergyUseWN(kBtu)', 
+            'SteamUse(kBtu)', 'Electricity(kWh)', 'Electricity(kBtu)', 'NaturalGas(therms)', 'NaturalGas(kBtu)', 
+            'DefaultData', 'Comments', 'ComplianceStatus', 'Outlier', 'TotalGHGEmissions', 'GHGEmissionsIntensity'
         ]
 
-        df = pd.DataFrame([features])
+    # Le décorateur est ajusté pour une compatibilité maximale
+    @bentoml.api
+    def predict(self, input_data: InputData) -> dict:
+        # Pydantic valide l'entrée automatiquement, donc pas besoin de 'try/except'
         
-        df.columns = ["NumberofFloors", "LargestPropertyuseTypeGFA", "SecondLargestPropertyuseTypeGFA",
-                      "ENERGYSTARScore", "SteamUse_kBtu", "NaturalGas_therms"]
+        full_data = {col: None for col in self.expected_columns}
         
-        # Effectuer la prédiction
-        prediction = self.pipeline.predict(df)[0]
+        # Met à jour le dictionnaire avec les données de la requête
+        full_data.update(input_data.dict())
 
-        # Retourner la prédiction dans le format JSON
+        df = pd.DataFrame([full_data])
+        
+        df['PrimaryPropertyType'] = df['PrimaryPropertyType'].fillna('').str.lower()
+        df['Neighborhood'] = df['Neighborhood'].fillna('').str.lower()
+
+        prediction = self.pipeline.predict(df)[0]
+        
         return {"prediction (kBtu)": round(float(prediction), 2)}
 
 
